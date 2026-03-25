@@ -286,7 +286,7 @@ async def rss_loop(http: aiohttp.ClientSession):
 # ================================================================
 async def health(_):
     return web.Response(
-        text="WorldNews        text="WorldNewsLi | Claude 3.5 + n8n + Nilesat | ACTIVE",
+                text="WorldNewsLi | Claude 3.5 + n8n + Nilesat | ACTIVE",
           content_type="text/plain"
 )
 
