@@ -45,56 +45,102 @@ API_HASH         = os.environ.get("TG_API_HASH", "35b04ff5fb54744d4439f3d1c41e42
 SESSION_STRING   = os.environ.get("SESSION_STRING", "")
 
 # AI Client
+ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "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")
 ai_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_KEY) if ANTHROPIC_KEY else None
+
+# ================================================================
+# HISTORY & ANALYSIS ENGINE
+# ================================================================
+news_history = deque(maxlen=30) # Stores last 30 news items for SitRep
+
+ANALYSIS_PROMPT = """
+You are the Strategic Military Analyst for WorldNewsLi.
+Analyze the following list of recent news events from the Middle East.
+Provide a 'Strategic Situation Report' (SitRep).
+
+FORMAT:
+🚩 [STRATEGIC ANALYSIS] (Bold title)
+- 📈 TREND: (What is happening overall?)
+- 🚨 RISK LEVEL: (High/Medium/Low)
+- 🎯 FOCUS: (Primary conflict zone today)
+- 📡 SAT-INTEL: (Brief mention of satellite monitoring status)
+
+RULES:
+1. Be clinical, serious, and strategic.
+2. Max 4 bullet points.
+3. Language: Arabic only.
+"""
+
+async def generate_military_sitrep():
+    if not ai_client or len(news_history) < 5: return None
+    combined = "\n---\n".join(list(news_history))
+    try:
+        msg = await ai_client.messages.create(
+            model="claude-3-5-sonnet-20240620",
+            max_tokens=800,
+            system=ANALYSIS_PROMPT,
+            messages=[{"role": "user", "content": f"RECENT NEWS LOG:\n{combined}"}]
+        )
+        return msg.content[0].text
+    except: return None
+
+async def sitrep_loop(http: aiohttp.ClientSession):
+    while True:
+        await asyncio.sleep(600) # Every 10 minutes
+        report = await generate_military_sitrep()
+        if report:
+            await push_to_n8n(http, {"type": "SITREP", "text": report})
+            ok = await publish_telegram(http, report)
+            print(f"[AI ANALYSIS][{'OK' if ok else 'FAIL'}] Strategic SitRep Published.")
 
 # ================================================================
 # SOURCES
 # ================================================================
 TG_CHANNELS = [
-          # Iraq / local agencies
+    # Iraq / local agencies
     "falafeliraqia", "A_M_H1", "centerkaf", "Alfaqaar313", "almawqef_tv",
-          "knat_b2sonshadeed", "Alomhoar", "SabrenNewss", "TANFITHY", "mayadeenchannel",
-          "Iraq_now3", "alsharqiyagroup", "Educationiq", "iraqi1_news", "Aletejahchanal",
-          "iraninarabic_ir", "tdofbdali313", "iran_military_capabilities", "iraqedu", "imamhussain_ar",
-          "ina_news", "Alforat_News", "baghdadtoday",
-
-          # Global & Military Satellites (IQ, IR, IL, US)
-          "aljazeera", "alarabiya", "BBCArabic", "RT_Arabic", "SkyNewsArabia", 
-          "cnnarabic", "alhadath", "alhurra", "irnaarabi", "Tasnimnews_Ar", 
-          "Mehrnewsarabic", "AvichayAdraee", "idfarabic"
+    "knat_b2sonshadeed", "Alomhoar", "SabrenNewss", "TANFITHY", "mayadeenchannel",
+    "Iraq_now3", "alsharqiyagroup", "Educationiq", "iraqi1_news", "Aletejahchanal",
+    "iraninarabic_ir", "tdofbdali313", "iran_military_capabilities", "iraqedu", "imamhussain_ar",
+    "ina_news", "Alforat_News", "baghdadtoday",
+    
+    # Global & Military Satellites (IQ, IR, IL, US)
+    "aljazeera", "alarabiya", "BBCArabic", "RT_Arabic", "SkyNewsArabia", 
+    "cnnarabic", "alhadath", "alhurra", "irnaarabi", "Tasnimnews_Ar", 
+    "Mehrnewsarabic", "AvichayAdraee", "idfarabic"
 ]
 
 # ================================================================
 # SATELLITE & SOURCE METADATA
 # ================================================================
 SAT_DATA = {
-          "Al Jazeera": "\u0646\u0627\u064a\u0644 \u0633\u0627\u062a: 12522 H (HD) | 10972 H (SD)",
-          "Al Arabiya": "\u0646\u0627\u064a\u0644 \u0633\u0627\u062a: 11747 V",
-          "Al Hadath": "\u0646\u0627\u064a\u0644 \u0633\u0627\u062a: 11747 V",
-          "Sky News": "\u0646\u0627\u064a\u0644 \u0633\u0627\u062a: 11977 V",
-          "RT Arabic": "\u0646\u0627\u064a\u0644 \u0633\u0627\u062a: 11958 H",
-          "Al Hurra": "\u0646\u0627\u064a\u0644 \u0633\u0627\u062a: 11258 H",
-          "Al Iraqiya": "\u0646\u0627\u064a\u0644 \u0633\u0627\u062a: 12560 H",
-          "BBC Arabic": "\u0644\u064a\u0633\u062a \u0639\u0644\u0649 \u0646\u0627\u064a\u0644 \u0633\u0627\u062a (\u0647\u0648\u062a \u0628\u064a\u0631\u062f \u0641\u0642\u0637)"
+    "Al Jazeera": "نايل سات: 12522 H (HD) | 10972 H (SD)",
+    "Al Arabiya": "نايل سات: 11747 V",
+    "Al Hadath": "نايل سات: 11747 V",
+    "Sky News": "نايل سات: 11977 V",
+    "RT Arabic": "نايل سات: 11958 H",
+    "Al Hurra": "نايل سات: 11258 H",
+    "Al Iraqiya": "نايل سات: 12560 H",
+    "BBC Arabic": "ليست على نايل سات (هوت بيرد فقط)"
 }
 
 LIVE_LINKS = {
-          "Al Jazeera": "https://live-hls-web-aja.getaj.net/AJA/index.m3u8",
-          "Al Arabiya": "https://www.youtube.com/user/AlArabiya",
+    "Al Jazeera": "https://live-hls-web-aja.getaj.net/AJA/index.m3u8",
+    "Al Arabiya": "https://www.youtube.com/user/AlArabiya",
 }
 
 RSS_FEEDS = {
-          "Al Jazeera": "https://www.aljazeera.net/aljazeerarss/a7c3d207-1647-498b-90e6-69d67a149c71/7a4239e3-861f-442a-9e8c-f05256e6d1fb",
-          "Al Arabiya": "https://www.alarabiya.net/.mrss/ar/last-24-hours.xml",
-          "Sky News": "https://www.skynewsarabia.com/rss/feeds/rss.xml",
-          "RT Arabic": "https://arabic.rt.com/rss/",
-          "Reuters": "https://feeds.reuters.com/reuters/ar/topNews",
-          "BBC Arabic": "https://feeds.bbci.co.uk/arabic/rss.xml",
-          "CNN Arabic": "https://arabic.cnn.com/rss/cnnarabic_world.rss",
-          "Times of Israel": "https://ar.timesofisrael.com/live-rss/",
-          "Tasnim (Arabic)": "https://www.tasnimnews.com/ar/rss/feed/0/7/0",
-          "INA (Iraq)": "https://www.ina.iq/rss/",
-          "Al Hurra": "https://www.alhurra.com/rss"
+    "Al Jazeera": "https://www.aljazeera.net/aljazeerarss/a7c3d207-1647-498b-90e6-69d67a149c71/7a4239e3-861f-442a-9e8c-f05256e6d1fb",
+    "Al Arabiya": "https://www.alarabiya.net/.mrss/ar/last-24-hours.xml",
+    "Sky News": "https://www.skynewsarabia.com/rss/feeds/rss.xml",
+    "RT Arabic": "https://arabic.rt.com/rss/",
+    "Reuters": "https://feeds.reuters.com/reuters/ar/topNews",
+    "BBC Arabic": "https://feeds.bbci.co.uk/arabic/rss.xml",
+    "CNN Arabic": "https://arabic.cnn.com/rss/cnnarabic_world.rss",
+    "Times of Israel": "https://ar.timesofisrael.com/live-rss/",
+    "Tasnim (Arabic)": "https://www.tasnimnews.com/ar/rss/feed/0/7/0",
+    "INA (Iraq)": "https://www.ina.iq/rss/",
+    "Al Hurra": "https://www.alhurra.com/rss"
 }
 
 # ================================================================
@@ -107,15 +153,15 @@ _seen         = set()
 recent        = deque(maxlen=1000)
 
 def make_hash(text: str) -> str:
-          return hashlib.md5(text.encode()).hexdigest()
+    return hashlib.md5(text.encode()).hexdigest()
 
 async def is_processed(h: str) -> bool:
-          if db_col: return bool(await db_col.find_one({"h": h}))
-                    return h in _seen
+    if db_col: return bool(await db_col.find_one({"h": h}))
+    return h in _seen
 
 async def mark_processed(h: str):
-          if db_col: await db_col.insert_one({"h": h})
-else:
+    if db_col: await db_col.insert_one({"h": h})
+    else:
         _seen.add(h)
         if len(_seen) > 5000: _seen.clear()
 
@@ -130,32 +176,32 @@ EDITORIAL RULES:
 1. SATELLITE HUB: Mention the satellite frequency data in the footer if provided in the context.
 2. EMERGENCY FOCUS: Prioritize any news involving air raids, missiles, troop movements, or explosions in IQ, IR, IL, US.
 3. RADICAL SUMMARIZATION: 
-   - \ud83d\udd39 [HEADLINE] (Bold, maximum 10 words)
-      - \u25aa\ufe0f [KEY DETAIL 1]
-         - \u25aa\ufe0f [KEY DETAIL 2]
-         4. FOOTER: Always end with: \ud83d\udce1 \u0645\u064e\u0635\u0627\u062f\u0650\u0631\u064f\u0646\u0627 | [SAT INFO or '\u062a\u063a\u0637\u064a\u0629 \u0639\u0627\u062c\u0644\u0629']
-         5. CLEANING: Remove ALL hashtags, URLs, and agency signatures.
-         6. TONE: Serious, neutral, professional satellite broadcast style.
-         7. OUTPUT: ONLY the summarized text in Arabic.
-         """
+   - 🔹 [HEADLINE] (Bold, maximum 10 words)
+   - ▪️ [KEY DETAIL 1]
+   - ▪️ [KEY DETAIL 2]
+4. FOOTER: Always end with: 📡 مَصادِرُنا | [SAT INFO or 'تغطية عاجلة']
+5. CLEANING: Remove ALL hashtags, URLs, and agency signatures.
+6. TONE: Serious, neutral, professional satellite broadcast style.
+7. OUTPUT: ONLY the summarized text in Arabic.
+"""
 
 async def execute_ai_pipeline(raw_text: str, ocr_text: str = "", source_name: str = "") -> str:
-          sat_info = SAT_DATA.get(source_name, "\u062a\u063a\u0637\u064a\u0629 \u0645\u0633\u062a\u0645\u0631\u0629")
+    sat_info = SAT_DATA.get(source_name, "تغطية مستمرة")
     combined = f"SOURCE: {source_name}\nSAT INFO: {sat_info}\nINPUT NEWS: {raw_text}\nOCR TEXT: {ocr_text}"
     if not ai_client:
-                  # Fallback to simple cleaning if Claude is offline
-                  clean = re.sub(r'https?://\S+|@\w+|#\w+|<[^>]+>', '', combined).strip()
-                  return f"\ud83d\udd39 {clean[:100]}...\n\n\u25aa\ufe0f \u062a\u0641\u0627\u0635\u064a\u0644 \u0625\u0636\u0627\u0641\u064a\u0629 \u0641\u064a \u0627\u0644\u0642\u0646\u0627\u0629."
+        # Fallback to simple cleaning if Claude is offline
+        clean = re.sub(r'https?://\S+|@\w+|#\w+|<[^>]+>', '', combined).strip()
+        return f"🔹 {clean[:100]}...\n\n▪️ تفاصيل إضافية في القناة."
 
     try:
-                  msg = await ai_client.messages.create(
-                                    model="claude-3-5-sonnet-20240620",
-                                    max_tokens=500,
-                                    system=SYSTEM_PROMPT,
-                                    messages=[{"role": "user", "content": combined}]
-                  )
-                  return msg.content[0].text
-except Exception as e:
+        msg = await ai_client.messages.create(
+            model="claude-3-5-sonnet-20240620",
+            max_tokens=500,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": combined}]
+        )
+        return msg.content[0].text
+    except Exception as e:
         print(f"[AI ERROR] {e}")
         return ""
 
@@ -163,42 +209,42 @@ except Exception as e:
 # N8N MACHINE CONNECTIVITY
 # ================================================================
 async def push_to_n8n(http: aiohttp.ClientSession, payload: dict):
-          if not N8N_WEBHOOK: return
-                    try:
-                                  async with http.post(N8N_WEBHOOK, json=payload, timeout=5) as r:
-                                                    pass
-                                            except: pass
+    if not N8N_WEBHOOK: return
+    try:
+        async with http.post(N8N_WEBHOOK, json=payload, timeout=5) as r:
+            pass
+    except: pass
 
 # ================================================================
 # CORE LOGIC & MEDIA
 # ================================================================
 async def extract_ocr(client: TelegramClient, msg) -> str:
-          if msg.photo:
-                        try:
-                                          buf = io.BytesIO()
-                                          await client.download_media(msg.photo, file=buf)
-                                          buf.seek(0)
-                                          img = Image.open(buf)
-                                          return pytesseract.image_to_string(img, lang="ara")
-                                      except: pass
+    if msg.photo:
+        try:
+            buf = io.BytesIO()
+            await client.download_media(msg.photo, file=buf)
+            buf.seek(0)
+            img = Image.open(buf)
+            return pytesseract.image_to_string(img, lang="ara")
+        except: pass
     return ""
 
 async def publish_telegram(http: aiohttp.ClientSession, text: str):
-          if not text or "EMPTY" in text: return False
-                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    if not text or "EMPTY" in text: return False
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     async with http.post(url, json={
-                  "chat_id": TARGET_CHANNEL, 
-                  "text": text, 
-                  "parse_mode": "HTML",
-                  "disable_web_page_preview": True
+        "chat_id": TARGET_CHANNEL, 
+        "text": text, 
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
     }, timeout=10) as r:
-                  resp = await r.json()
+        resp = await r.json()
         return resp.get("ok", False)
 
 async def handle_telegram_event(event, client: TelegramClient, http: aiohttp.ClientSession):
-          msg = event.message
+    msg = event.message
     if not msg.date or msg.date < BOT_START_TIME: return
-
+    
     raw = msg.message or ""
     ocr = await extract_ocr(client, msg)
     combined = (raw + " " + ocr).strip()
@@ -207,15 +253,18 @@ async def handle_telegram_event(event, client: TelegramClient, http: aiohttp.Cli
     # Deduplication
     h = make_hash(combined[:400])
     if await is_processed(h): return
-              await mark_processed(h)
-
+    await mark_processed(h)
+    
     # AI Processing
-    final_post = await execute_ai_pipeline(raw, ocr, msg.chat.title if hasattr(msg.chat, 'title') else "\u0645\u064e\u0635\u0627\u062f\u0650\u0631\u064f\u0646\u0627")
+    final_post = await execute_ai_pipeline(raw, ocr, msg.chat.title if hasattr(msg.chat, 'title') else "مَصادِرُنا")
     if not final_post: return
+    
+    # Track History for Analysis
+    news_history.append(final_post)
 
     # Push to n8n (Optional Orchestration)
     await push_to_n8n(http, {"source": "Telegram", "raw": raw, "ai_post": final_post, "ocr": ocr})
-
+    
     # Final Post
     ok = await publish_telegram(http, final_post)
     print(f"[AI ENGINE][{'OK' if ok else 'FAIL'}] Event from Telegram Stream.")
@@ -226,43 +275,46 @@ async def handle_telegram_event(event, client: TelegramClient, http: aiohttp.Cli
 RSS_INITIALIZED = False
 
 async def poll_rss(http: aiohttp.ClientSession):
-          global RSS_INITIALIZED
+    global RSS_INITIALIZED
     for name, url in RSS_FEEDS.items():
-                  try:
-                                    async with http.get(url, timeout=5) as r:
-                                                          if r.status != 200: continue
-                                                                                feed = feedparser.parse(await r.text())
-                                                  except: continue
-
+        try:
+            async with http.get(url, timeout=5) as r:
+                if r.status != 200: continue
+                feed = feedparser.parse(await r.text())
+        except: continue
+        
         for entry in feed.entries[:5]:
-                          raw = f"{getattr(entry, 'title','')}. {getattr(entry, 'description','')}"
+            raw = f"{getattr(entry, 'title','')}. {getattr(entry, 'description','')}"
             if len(raw) < 30: continue
-
+            
             h = make_hash(raw[:400])
             if not RSS_INITIALIZED:
-                                  await mark_processed(h)
+                await mark_processed(h)
                 continue
-
+            
             if await is_processed(h): continue
-                              await mark_processed(h)
-
+            await mark_processed(h)
+            
             # AI Processing
             final_post = await execute_ai_pipeline(raw, source_name=name)
             if not final_post: continue
-
+            
+            # Track History for Analysis
+            news_history.append(final_post)
+            
             # Push to n8n
             await push_to_n8n(http, {"source": "RSS", "provider": name, "raw": raw, "ai_post": final_post})
-
+            
             ok = await publish_telegram(http, final_post)
             print(f"[AI ENGINE][{'OK' if ok else 'FAIL'}] {name} (RSS)")
-
+                
     if not RSS_INITIALIZED:
-                  print("[BOOT] Base RSS mapping completed.")
+        print("[BOOT] Base RSS mapping completed.")
         RSS_INITIALIZED = True
 
 async def poll_rss_loop(http: aiohttp.ClientSession):
-          while True:
-                        await poll_rss(http)
+    while True:
+        await poll_rss(http)
         await asyncio.sleep(5)
 
 # ================================================================
@@ -271,31 +323,32 @@ async def poll_rss_loop(http: aiohttp.ClientSession):
 async def health(_): return web.Response(text="WorldNewsLi AI Engine (Claude 3.5 + n8n) is Active.")
 
 async def main():
-          client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+    client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
     await client.connect()
     if not await client.is_user_authorized(): 
-                  print("[FATAL] Sesion check failed.")
+        print("[FATAL] Sesion check failed.")
         return
-
+    
     http = aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=100))
-
+    
     valid_chats = []
     print("[INIT] Connecting AI Scraper to 0-Latency Sockets...")
     for ch in TG_CHANNELS:
-                  try: valid_chats.append(await client.get_entity(ch))
-                                except: print(f"[INIT SKIP] {ch}")
-
+        try: valid_chats.append(await client.get_entity(ch))
+        except: print(f"[INIT SKIP] {ch}")
+    
     @client.on(events.NewMessage(chats=valid_chats))
     async def on_new(event): await handle_telegram_event(event, client, http)
-
+    
     app = web.Application()
     app.router.add_get("/", health)
     r = web.AppRunner(app)
     await r.setup()
     await web.TCPSite(r, "0.0.0.0", int(os.environ.get("PORT", 8080))).start()
-
+    
     print(f"[PIPELINE] CLAUDE 3.5 AI ENGINE ONLINE.")
-    await asyncio.gather(client.run_until_disconnected(), poll_rss_loop(http))
+    await asyncio.gather(client.run_until_disconnected(), poll_rss_loop(http), sitrep_loop(http))
 
 if __name__ == "__main__":
-          asyncio.run(main())
+    asyncio.run(main())
+Stop Agent
